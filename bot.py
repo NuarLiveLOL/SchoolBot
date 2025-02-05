@@ -29,6 +29,9 @@ connected_pcs = {}
 async def start(message: Message):
     await message.reply("Привет! Используйте /connect, чтобы подключиться.")
 
+@dp.message(Command("Nuar"))
+async def start(message: Message):
+    await message.reply("Тут был NuarLite")
 
 # Команда /connect — подключение ПК
 @dp.message(Command("connect"))
@@ -66,7 +69,7 @@ async def list_pcs(message: Message):
 # Запуск бота
 async def main():
     print("Бот работает!")
-    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.delete_webhook(drop_pending_updates=True)  # Удаляем старые запросы
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
