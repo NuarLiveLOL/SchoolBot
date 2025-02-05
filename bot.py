@@ -1,3 +1,7 @@
+import os
+import pip
+from background import keep_alive
+pip.main(['install', 'asyncio', 'aiogram', 'python-dotenv', 'background'])
 import asyncio
 import os
 from aiogram import Bot, Dispatcher
@@ -23,37 +27,45 @@ dp = Dispatcher()
 # Храним список подключенных ПК {telegram_id: pc_name}
 connected_pcs = {}
 
+
 # Команда /start
 @dp.message(Command("start"))
 async def start(message: Message):
     await message.reply("Привет! Используйте /connect, чтобы подключиться.")
 
+
 # Команда /connect — подключение ПК
 @dp.message(Command("connect"))
 async def connect_pc(message: Message):
     pc_id = str(message.from_user.id)  # Telegram ID = ID ПК
-    
+
     if pc_id in connected_pcs:
-        return await message.reply(f"Этот ПК уже подключен как {connected_pcs[pc_id]}.")
+        return await message.reply(
+            f"Этот ПК уже подключен как {connected_pcs[pc_id]}.")
 
     # Берем имя ПК из сообщения (если отправлено)
     args = message.text.split(maxsplit=1)
-    pc_name = args[1] if len(args) > 1 else f"PC_{pc_id}"  # Если имя не указано, даем ID по умолчанию
+    pc_name = args[1] if len(
+        args
+    ) > 1 else f"PC_{pc_id}"  # Если имя не указано, даем ID по умолчанию
 
     connected_pcs[pc_id] = pc_name
     await message.reply(f"ПК {pc_name} ({pc_id}) успешно подключен!")
+
 
 # Команда /list — список ПК
 @dp.message(Command("list"))
 async def list_pcs(message: Message):
     if message.from_user.id != ADMIN_ID:
         return await message.reply("Нет доступа.")
-    
+
     if not connected_pcs:
         return await message.reply("Нет подключенных ПК.")
 
-    text = "Подключенные ПК:\n" + "\n".join(f"{pc_name} (ID: {pc})" for pc, pc_name in connected_pcs.items())
+    text = "Подключенные ПК:\n" + "\n".join(
+        f"{pc_name} (ID: {pc})" for pc, pc_name in connected_pcs.items())
     await message.reply(text)
+
 
 # Запуск бота
 async def main():
@@ -61,5 +73,6 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
+keep_alive()
 if __name__ == "__main__":
     asyncio.run(main())  # Запускаем бота
