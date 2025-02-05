@@ -1,7 +1,3 @@
-import os
-import pip
-from background import keep_alive
-pip.main(['install', 'asyncio', 'aiogram', 'python-dotenv', 'background'])
 import asyncio
 import os
 from aiogram import Bot, Dispatcher
@@ -73,6 +69,5 @@ async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
-keep_alive()
 if __name__ == "__main__":
     asyncio.run(main())  # Запускаем бота
