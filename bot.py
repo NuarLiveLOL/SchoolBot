@@ -2,7 +2,8 @@ import os
 import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
-from aiogram.utils.executor import start_webhook
+from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.utils import executor
 from dotenv import load_dotenv
 import requests
 
@@ -17,6 +18,9 @@ WEBHOOK_URL = f"{RENDER_DOMAIN}{WEBHOOK_PATH}"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot)
+
+# Миддлвар для логирования
+dp.middleware.setup(LoggingMiddleware())
 
 # Хэндлер для получения обновлений от вебхука
 @dp.message_handler(commands=["start", "help"])
@@ -69,7 +73,7 @@ async def main():
     await set_webhook()
 
     # Запуск вебхука
-    start_webhook(
+    executor.start_webhook(
         dispatcher=dp,
         webhook_path=WEBHOOK_PATH,
         on_start=on_start,
