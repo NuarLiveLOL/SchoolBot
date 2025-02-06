@@ -1,20 +1,23 @@
 import logging
-import aiohttp
 import asyncio
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
-from aiogram.utils import executor
+import aiohttp
+from aiogram import Bot, Dispatcher
+from aiogram.types import Message
+from aiogram.filters import Command
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-API_TOKEN = '7511733020:AAHTjBOd87NB8awXCH6OUHGAHqFGZ0QPWuI'  # Замените на ваш токен
-PING_URL = 'https://schoolbot-x1xt.onrender.com'  # Замените на URL вашего приложения на Render
+# Настройки
+TOKEN = '7511733020:AAHTjBOd87NB8awXCH6OUHGAHqFGZ0QPWuI'  # Замените на ваш токен
+ADMIN_ID = 5492942922  # Замените на ваш ID администратора
+PING_URL = 'https://your-url.onrender.com'  # Замените на ваш URL
 
-logging.basicConfig(level=logging.INFO)
+if not TOKEN or not ADMIN_ID or not PING_URL:
+    print("Ошибка: не указан TOKEN, ADMIN_ID или PING_URL.")
+    exit(1)
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
-dp.middleware.setup(LoggingMiddleware())
+# Создаем бота и диспетчер
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
 # Функция для отправки самопинга
 async def self_ping():
@@ -30,20 +33,23 @@ async def self_ping():
 
 # Планировщик для самопинга каждые 5 минут
 scheduler = AsyncIOScheduler()
-scheduler.add_job(self_ping, 'interval', minutes=5)
-scheduler.start()
 
-# Обработка команды /start
-@dp.message_handler(commands=['start'])
-async def send_welcome(message: types.Message):
-    await message.reply("Привет! Я Telegram-бот.")
+# Команда /start
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.reply("Привет! Я бот с самопингом.")
 
-# Обработка команды /help
-@dp.message_handler(commands=['help'])
-async def send_help(message: types.Message):
-    await message.reply("Вот как я могу помочь!")
+# Запуск бота
+async def main():
+    logging.basicConfig(level=logging.INFO)
+    print("Бот работает!")
 
-if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.create_task(scheduler.start())  # Запуск планировщика
-    executor.start_polling(dp, skip_updates=True)
+# Запуск планировщика
+    scheduler.add_job(self_ping, 'interval', minutes=5)
+    scheduler.start()
+    
+    await bot.delete_webhook(drop_pending_updates=True)
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())  # Запускаем бота
