@@ -3,3 +3,5 @@ aiogram
 python-dotenv
 flask
 requests
+subprocess
+signal
