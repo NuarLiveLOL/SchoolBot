@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import Command
 from dotenv import load_dotenv
+from keep_alive import keep_alive  # Импортируем поддержку активности
 
 # Загружаем .env
 load_dotenv()
@@ -22,7 +23,6 @@ dp = Dispatcher()
 
 # Храним список подключенных ПК {telegram_id: pc_name}
 connected_pcs = {}
-
 
 # Команда /start
 @dp.message(Command("start"))
@@ -51,7 +51,6 @@ async def connect_pc(message: Message):
     connected_pcs[pc_id] = pc_name
     await message.reply(f"ПК {pc_name} ({pc_id}) успешно подключен!")
 
-
 # Команда /list — список ПК
 @dp.message(Command("list"))
 async def list_pcs(message: Message):
@@ -65,12 +64,12 @@ async def list_pcs(message: Message):
         f"{pc_name} (ID: {pc})" for pc, pc_name in connected_pcs.items())
     await message.reply(text)
 
-
 # Запуск бота
 async def main():
-    print("Бот работает!")
+    keep_alive()  # Запуск Flask-сервера для поддержания активности
+    print("✅ Бот работает и не отключается!")
     await bot.delete_webhook(drop_pending_updates=True)  # Удаляем старые запросы
-    await dp.start_polling(bot)
+    await dp.start_polling(bot)  # Запускаем Long Polling
 
 if __name__ == "__main__":
     asyncio.run(main())  # Запускаем бота
