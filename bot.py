@@ -1,67 +1,44 @@
-import os
-import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import ParseMode
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import aiohttp
-from aiohttp import ClientSession
+import asyncio
+from aiogram import Bot, Dispatcher
+from aiogram.types import Message
+from aiogram.filters import Command
 
-TOKEN = '7511733020:AAHTjBOd87NB8awXCH6OUHGAHqFGZ0QPWuI'
-WEBHOOK_URL = 'https://yourapp.onrender.com/webhook'  # Замените на свой URL
-PORT = 8443  # Например, порт для Render
+TOKEN = '8043275462:AAH7nY9QOojLTutdI_yIs7fn6G_H-gmLsmA'
 
+# Создаем бота и диспетчер
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+# Команда /start
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.reply("Привет! Используйте /connect, чтобы подключиться.")
 
-# Установка webhook
-async def set_webhook():
-    webhook = await bot.set_webhook(WEBHOOK_URL)
-    if webhook:
-        logging.info(f"Webhook установлен на {WEBHOOK_URL}")
-    else:
-        logging.error("Ошибка установки webhook!")
+# Команда /stop для завершения работы бота
+@dp.message(Command("stop"))
+async def stop(message: Message):
+    await message.reply("Бот завершает свою работу...")
+    # Останавливаем polling и закрываем соединение с ботом
+    await dp.stop_polling()
+    await bot.close()
 
-# Самопинг
-async def self_ping():
-    async with ClientSession() as session:
-        try:
-            async with session.get(WEBHOOK_URL) as response:
-                if response.status == 200:
-                    logging.info("Self-ping успешен!")
-                else:
-                    logging.error(f"Self-ping не удался с кодом {response.status}")
-        except Exception as e:
-            logging.error(f"Ошибка во время самопинга: {e}")
+# Запуск бота
+async def main():
+    print("Бот работает!")
+    try:
+        # Запускаем polling
+        await dp.start_polling(bot)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        # Закрываем соединение с ботом, если он был открыт
+        await bot.close()
+        print("Бот завершил свою работу!")
 
-# Планировщик для самопинга каждые 5 минут
-scheduler = AsyncIOScheduler()
-scheduler.add_job(self_ping, 'interval', minutes=5)  # Пинг раз в 5 минут
-
-@dp.message_handler(commands=['start'])
-async def start(message: types.Message):
-    await message.reply("Привет! Я бот с активным webhook.")
-
-# Запуск бота с webhook
-async def on_start():
-    # Устанавливаем webhook и запускаем планировщик
-    await set_webhook()
-    scheduler.start()
-
-# Запуск приложения
-if __name__ == '__main__':
-    from aiohttp import web
-
-    # Определяем путь для webhook
-    async def handle(request):
-        update = await request.json()
-        await dp.process_update(types.Update.to_object(update))
-        return web.Response(status=200)
-
-    app = web.Application()
-    app.router.add_post('/webhook', handle)
-
-    # Запуск aiohttp веб-сервера
-    web.run_app(app, host='0.0.0.0', port=PORT)
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())  # Запускаем бота
+    except KeyboardInterrupt:
+        print("Бот завершен вручную.")
+    except Exception as e:
+        print(f"Произошла ошибка: {e}")
