@@ -1,55 +1,67 @@
+import os
 import logging
-import asyncio
-import aiohttp
-from aiogram import Bot, Dispatcher
-from aiogram.types import Message
-from aiogram.filters import Command
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ParseMode
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+import aiohttp
+from aiohttp import ClientSession
 
-# Настройки
-TOKEN = '7511733020:AAHTjBOd87NB8awXCH6OUHGAHqFGZ0QPWuI'  # Замените на ваш токен
-ADMIN_ID = 5492942922  # Замените на ваш ID администратора
-PING_URL = 'https://your-url.onrender.com'  # Замените на ваш URL
+TOKEN = '7511733020:AAHTjBOd87NB8awXCH6OUHGAHqFGZ0QPWuI'
+WEBHOOK_URL = 'https://yourapp.onrender.com/webhook'  # Замените на свой URL
+PORT = 8443  # Например, порт для Render
 
-if not TOKEN or not ADMIN_ID or not PING_URL:
-    print("Ошибка: не указан TOKEN, ADMIN_ID или PING_URL.")
-    exit(1)
-
-# Создаем бота и диспетчер
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Функция для отправки самопинга
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+
+# Установка webhook
+async def set_webhook():
+    webhook = await bot.set_webhook(WEBHOOK_URL)
+    if webhook:
+        logging.info(f"Webhook установлен на {WEBHOOK_URL}")
+    else:
+        logging.error("Ошибка установки webhook!")
+
+# Самопинг
 async def self_ping():
-    async with aiohttp.ClientSession() as session:
+    async with ClientSession() as session:
         try:
-            async with session.get(PING_URL) as response:
+            async with session.get(WEBHOOK_URL) as response:
                 if response.status == 200:
-                    logging.info('Self-ping successful!')
+                    logging.info("Self-ping успешен!")
                 else:
-                    logging.error(f'Self-ping failed with status code {response.status}')
+                    logging.error(f"Self-ping не удался с кодом {response.status}")
         except Exception as e:
-            logging.error(f'Error during self-ping: {e}')
+            logging.error(f"Ошибка во время самопинга: {e}")
 
 # Планировщик для самопинга каждые 5 минут
 scheduler = AsyncIOScheduler()
+scheduler.add_job(self_ping, 'interval', minutes=5)  # Пинг раз в 5 минут
 
-# Команда /start
-@dp.message(Command("start"))
-async def start(message: Message):
-    await message.reply("Привет! Я бот с самопингом.")
+@dp.message_handler(commands=['start'])
+async def start(message: types.Message):
+    await message.reply("Привет! Я бот с активным webhook.")
 
-# Запуск бота
-async def main():
-    logging.basicConfig(level=logging.INFO)
-    print("Бот работает!")
-
-# Запуск планировщика
-    scheduler.add_job(self_ping, 'interval', minutes=5)
+# Запуск бота с webhook
+async def on_start():
+    # Устанавливаем webhook и запускаем планировщик
+    await set_webhook()
     scheduler.start()
-    
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
 
-if __name__ == "__main__":
-    asyncio.run(main())  # Запускаем бота
+# Запуск приложения
+if __name__ == '__main__':
+    from aiohttp import web
+
+    # Определяем путь для webhook
+    async def handle(request):
+        update = await request.json()
+        await dp.process_update(types.Update.to_object(update))
+        return web.Response(status=200)
+
+    app = web.Application()
+    app.router.add_post('/webhook', handle)
+
+    # Запуск aiohttp веб-сервера
+    web.run_app(app, host='0.0.0.0', port=PORT)
