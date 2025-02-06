@@ -1,90 +1,89 @@
 import os
 import asyncio
-import random
-import aiohttp
+import requests
+import threading
 from aiogram import Bot, Dispatcher
 from aiogram.types import Message
 from aiogram.filters import Command
-from dotenv import load_dotenv 
+from dotenv import load_dotenv
+from flask import Flask
 
-# Загружаем .env
+# Загружаем переменные окружения
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
 
-if not TOKEN:
-    print("Ошибка: не указан TOKEN в .env")
+if not TOKEN or not ADMIN_ID:
+    print("Ошибка: не указан TOKEN или ADMIN_ID в .env")
     exit(1)
 
+ADMIN_ID = int(ADMIN_ID)
+
+# Создаем бота и диспетчер
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# 📌 Функция keep-alive (пингует API, чтобы Render не отключил бота)
+# Подключенные ПК
+connected_pcs = {}
+
+# Команда /start
+@dp.message(Command("start"))
+async def start(message: Message):
+    await message.reply("Привет! Используйте /connect, чтобы подключиться.")
+
+# Команда /connect
+@dp.message(Command("connect"))
+async def connect_pc(message: Message):
+    pc_id = str(message.from_user.id)
+
+    if pc_id in connected_pcs:
+        return await message.reply(f"Этот ПК уже подключен как {connected_pcs[pc_id]}.")
+
+    args = message.text.split(maxsplit=1)
+    pc_name = args[1] if len(args) > 1 else f"PC_{pc_id}"
+
+    connected_pcs[pc_id] = pc_name
+    await message.reply(f"ПК {pc_name} ({pc_id}) успешно подключен!")
+
+# Команда /list
+@dp.message(Command("list"))
+async def list_pcs(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return await message.reply("Нет доступа.")
+
+    if not connected_pcs:
+        return await message.reply("Нет подключенных ПК.")
+
+    text = "Подключенные ПК:\n" + "\n".join(
+        f"{pc_name} (ID: {pc})" for pc, pc_name in connected_pcs.items()
+    )
+    await message.reply(text)
+
+# 🔥 Поддержание активности Render через HTTP-запросы 🔥
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "Бот работает!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=10000)
+
+# 🔥 Периодический запрос на сервер погоды 🔥
 async def keep_alive():
     while True:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("https://api.weatherapi.com/v1/current.json?key=YOUR_API_KEY&q=London") as response:
-                    data = await response.json()
-                    print(f"Keep-alive: Температура в Лондоне {data['current']['temp_c']}°C")
+            requests.get("https://api.weatherapi.com/v1/current.json?key=8428519cf2904ddaae4123314250602&q=London")
+            print("Keep-alive запрос отправлен!")
         except Exception as e:
-            print("Keep-alive ошибка:", e)
+            print(f"Ошибка Keep-alive: {e}")
+        await asyncio.sleep(300)  # Запрос каждые 5 минут
 
-        await asyncio.sleep(60)  # Пинг каждую минуту
-
-# 📌 Команда /start
-@dp.message(Command("start"))
-async def start(message: Message):
-    await message.reply("Привет! Я игровой бот 🤖. Используй /help, чтобы узнать мои команды!")
-
-# 📌 Команда /help
-@dp.message(Command("help"))
-async def help_cmd(message: Message):
-    text = "🎮 Команды бота:\n"
-    text += "/coin – Подбросить монетку 🪙\n"
-    text += "/dice – Бросить кости 🎲\n"
-    text += "/weather – Погода в Лондоне 🌦\n"
-    text += "/joke – Случайная шутка 😂\n"
-    await message.reply(text)
-
-# 📌 Команда /coin – Монетка
-@dp.message(Command("coin"))
-async def coin(message: Message):
-    result = random.choice(["Орёл 🦅", "Решка 🎭"])
-    await message.reply(f"Монетка подброшена: {result}")
-
-# 📌 Команда /dice – Кости 🎲
-@dp.message(Command("dice"))
-async def dice(message: Message):
-    result = random.randint(1, 6)
-    await message.reply(f"🎲 Вы бросили кости: {result}")
-
-# 📌 Команда /weather – Запрос погоды
-@dp.message(Command("weather"))
-async def weather(message: Message):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://api.weatherapi.com/v1/current.json?key=YOUR_API_KEY&q=London") as response:
-                data = await response.json()
-                temp = data["current"]["temp_c"]
-                await message.reply(f"🌦 Температура в Лондоне: {temp}°C")
-    except Exception as e:
-        await message.reply("❌ Ошибка при запросе погоды.")
-
-# 📌 Команда /joke – Случайная шутка
-@dp.message(Command("joke"))
-async def joke(message: Message):
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://official-joke-api.appspot.com/jokes/random") as response:
-                joke_data = await response.json()
-                await message.reply(f"😂 {joke_data['setup']}\n{joke_data['punchline']}")
-    except Exception as e:
-        await message.reply("❌ Ошибка при запросе шутки.")
-
-# 📌 Запуск бота
+# 🔥 Запуск бота и Flask в одном потоке 🔥
 async def main():
+    threading.Thread(target=run_flask, daemon=True).start()
+    asyncio.create_task(keep_alive())
     print("Бот запущен!")
-    asyncio.create_task(keep_alive())  # Запуск keep-alive в фоне
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
