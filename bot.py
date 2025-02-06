@@ -7,9 +7,8 @@ from flask import Flask, request
 from threading import Thread
 from aiogram import Bot, Dispatcher
 from aiogram.types import Update
-from aiogram.filters import Command
 from aiogram.enums import ParseMode
-from aiogram.methods import DeleteWebhook
+from aiogram.methods import DeleteWebhook, SetWebhook
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
@@ -44,10 +43,10 @@ def run_flask():
 def kill_old_sessions():
     try:
         print("🛑 Завершаем старые сессии бота...")
-        subprocess.run(["pkill", "-f", "bot.py"])  # Убиваем старые процессы
+        subprocess.run(["pkill", "-f", "bot.py"], check=True)
         print("✅ Старые сессии остановлены!")
-    except Exception as e:
-        print(f"⚠ Ошибка при завершении старых сессий: {e}")
+    except subprocess.CalledProcessError:
+        print("⚠ Не найдено старых процессов.")
 
 # Создаем бота и диспетчер
 bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
@@ -56,31 +55,36 @@ dp = Dispatcher()
 # Храним список подключенных ПК
 connected_pcs = {}
 
-# Флаг работы бота
-running = True
+# Глобальная переменная для управления потоком Flask
+flask_thread = None
 
-# Корректное завершение бота
+# Функция корректного завершения бота
 async def shutdown():
-    global running
-    running = False
+    global flask_thread
     print("🛑 Остановка бота...")
+
     await bot.session.close()
+    
+    if flask_thread and flask_thread.is_alive():
+        print("🛑 Остановка Flask...")
+        flask_thread.join(timeout=5)  # Ждём завершения потока Flask
     sys.exit(0)
 
 # Обработчик сигналов завершения
 def stop_handler(signum, frame):
-    asyncio.create_task(shutdown())
+    loop = asyncio.get_event_loop()
+    loop.create_task(shutdown())
 
 signal.signal(signal.SIGTERM, stop_handler)
 signal.signal(signal.SIGINT, stop_handler)
 
 # Команда /start
-@dp.message(Command("start"))
+@dp.message()
 async def start(message):
     await message.reply("Привет! Используйте /connect, чтобы подключиться.")
 
 # Команда /connect
-@dp.message(Command("connect"))
+@dp.message()
 async def connect_pc(message):
     pc_id = str(message.from_user.id)
 
@@ -93,7 +97,7 @@ async def connect_pc(message):
     await message.reply(f"ПК {pc_name} ({pc_id}) успешно подключен!")
 
 # Команда /list
-@dp.message(Command("list"))
+@dp.message()
 async def list_pcs(message):
     if message.from_user.id != ADMIN_ID:
         return await message.reply("Нет доступа.")
@@ -106,17 +110,18 @@ async def list_pcs(message):
 
 # Запуск бота
 async def main():
+    global flask_thread
     print("✅ Бот работает!")
 
-    # Удаляем старые вебхуки, если они есть
+    # Удаляем старые вебхуки
     await bot(DeleteWebhook(drop_pending_updates=True))
 
     # Устанавливаем новый вебхук
     webhook_url = f"https://your-app-name.onrender.com/{TOKEN}"
-    await bot.set_webhook(webhook_url)
+    await bot(SetWebhook(url=webhook_url))
 
     # Запускаем Flask в отдельном потоке
-    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread = Thread(target=run_flask, daemon=False)
     flask_thread.start()
 
 if __name__ == "__main__":
