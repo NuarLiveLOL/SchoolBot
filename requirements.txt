@@ -2,3 +2,4 @@ asyncio
 aiogram
 python-dotenv
 flask
+requests
