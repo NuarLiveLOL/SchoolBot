@@ -1,112 +1,86 @@
 import os
 import asyncio
-import requests
-import logging
-import threading
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message, Update
-from aiogram.filters import Command
+from aiogram.types import Update
+from aiogram.utils.executor import start_webhook
 from dotenv import load_dotenv
-from flask import Flask, request
+import requests
 
-# Настраиваем логирование
-logging.basicConfig(level=logging.INFO)
-
-# Загружаем переменные окружения
+# Загрузка переменных окружения
 load_dotenv()
-TOKEN = os.getenv("TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")
+
+TOKEN = os.getenv("BOT_TOKEN")
 RENDER_DOMAIN = os.getenv("RENDER_DOMAIN")
 
-if not TOKEN or not ADMIN_ID or not RENDER_DOMAIN:
-    print("Ошибка: не указан TOKEN, ADMIN_ID или RENDER_DOMAIN в .env")
-    exit(1)
+WEBHOOK_PATH = f"/webhook/{TOKEN}"
+WEBHOOK_URL = f"{RENDER_DOMAIN}{WEBHOOK_PATH}"
 
-ADMIN_ID = int(ADMIN_ID)
-
-# Создаем бота и диспетчер
 bot = Bot(token=TOKEN)
-dp = Dispatcher()
+dp = Dispatcher(bot)
 
-# Flask-сервер для Webhook
-app = Flask(__name__)
+# Хэндлер для получения обновлений от вебхука
+@dp.message_handler(commands=["start", "help"])
+async def send_welcome(message):
+    await message.answer("Привет! Я бот, с которым ты можешь взаимодействовать.")
 
-@app.route("/", methods=["GET"])
-def home():
-    return "Бот работает!"
+@dp.message_handler(commands=["game"])
+async def start_game(message):
+    await message.answer("Начинаем игру!")
 
-@app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    try:
-        data = request.json
-        update = Update.model_validate(data)
-        await dp.feed_update(bot, update)
-        return "OK", 200
-    except Exception as e:
-        logging.error(f"Ошибка обработки Webhook: {e}")
-        return "Internal Server Error", 500
+# Хэндлер для команды /weather
+@dp.message_handler(commands=["weather"])
+async def weather(message):
+    # Пример получения данных о погоде
+    city = "Moscow"
+    api_key = os.getenv("WEATHER_API_KEY")  # Убедитесь, что API ключ для погоды прописан в .env
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric&lang=ru"
+    
+    response = requests.get(url)
+    data = response.json()
 
-# 🔥 Keep-Alive процесс 🔥
+    if response.status_code == 200:
+        temp = data['main']['temp']
+        description = data['weather'][0]['description']
+        await message.answer(f"Погода в {city}: {temp}°C, {description}")
+    else:
+        await message.answer("Не удалось получить данные о погоде.")
+
+# Функция для поддержания живости (используем keep-alive запрос)
 def keep_alive():
-    while True:
-        try:
-            requests.get("https://api.weatherapi.com/v1/current.json?key=8428519cf2904ddaae4123314250602&q=London")
-            print("Keep-alive запрос отправлен!")
-        except Exception as e:
-            print(f"Ошибка Keep-alive: {e}")
-        asyncio.run(asyncio.sleep(300))  # Запрос каждые 5 минут
-
-# 🚀 **КОМАНДЫ БОТА** 🚀
-
-@dp.message(Command("start"))
-async def start_cmd(message: Message):
-    await message.answer("Привет! Я твой игровой бот. Введи /help, чтобы узнать команды.")
-
-@dp.message(Command("help"))
-async def help_cmd(message: Message):
-    await message.answer("🎮 Доступные команды:\n"
-                         "/start - Начать\n"
-                         "/game - Начать игру\n"
-                         "/coin - Подбросить монету\n"
-                         "/dice - Кинуть кубик\n"
-                         "/weather - Узнать погоду")
-
-@dp.message(Command("game"))
-async def game_cmd(message: Message):
-    await message.answer("🕹 Начинаем игру! Введи команду /dice или /coin.")
-
-@dp.message(Command("coin"))
-async def coin_cmd(message: Message):
-    result = "Орел" if os.urandom(1)[0] % 2 == 0 else "Решка"
-    await message.answer(f"🪙 Монета упала на {result}!")
-
-@dp.message(Command("dice"))
-async def dice_cmd(message: Message):
-    dice_roll = (os.urandom(1)[0] % 6) + 1
-    await message.answer(f"🎲 Ты выбросил {dice_roll}!")
-
-@dp.message(Command("weather"))
-async def weather_cmd(message: Message):
+    url = f"{RENDER_DOMAIN}/"
     try:
-        response = requests.get("https://api.weatherapi.com/v1/current.json?key=8428519cf2904ddaae4123314250602&q=London")
-        data = response.json()
-        temp = data["current"]["temp_c"]
-        condition = data["current"]["condition"]["text"]
-        await message.answer(f"🌦 Погода в Лондоне: {temp}°C, {condition}")
+        requests.get(url)
     except Exception as e:
-        await message.answer("Ошибка при получении погоды.")
+        print(f"Error during keep alive: {e}")
 
-# 🚀 **Запуск бота** 🚀
+# Хэндлер для webhook
+async def on_start(webhook: str, update: Update):
+    print(f"Получен новый запрос: {update}")
+    await bot.process_update(update)
+
+# Установка вебхука
+async def set_webhook():
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(WEBHOOK_URL)
+
+# Основная функция для запуска бота
 async def main():
-    # Устанавливаем Webhook
-    webhook_url = f"https://{RENDER_DOMAIN}/{TOKEN}"
-    await bot.set_webhook(webhook_url)
+    # Установка вебхука
+    await set_webhook()
 
-    # Запускаем Keep-Alive в отдельном потоке
-    threading.Thread(target=keep_alive, daemon=True).start()
+    # Запуск вебхука
+    start_webhook(
+        dispatcher=dp,
+        webhook_path=WEBHOOK_PATH,
+        on_start=on_start,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", 10000)),
+    )
 
-    # Запускаем Flask в фоне
-    app.run(host="0.0.0.0", port=10000, threaded=True)
+    # Долгий запуск: keep-alive запросы
+    while True:
+        keep_alive()
+        await asyncio.sleep(300)  # каждую 5 минут отправляется запрос, чтобы не было разрыва соединения
 
 if __name__ == "__main__":
     asyncio.run(main())
