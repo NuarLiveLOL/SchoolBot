@@ -3,14 +3,16 @@ import os
 import signal
 import sys
 import subprocess
-from flask import Flask
+from flask import Flask, request
 from threading import Thread
 from aiogram import Bot, Dispatcher
-from aiogram.types import Message
+from aiogram.types import Update
 from aiogram.filters import Command
+from aiogram.enums import ParseMode
+from aiogram.methods import DeleteWebhook
 from dotenv import load_dotenv
 
-# Загрузка .env
+# Загружаем переменные окружения
 load_dotenv()
 TOKEN = os.getenv("TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
@@ -21,27 +23,34 @@ if not TOKEN or not ADMIN_ID:
 
 ADMIN_ID = int(ADMIN_ID)
 
-# Создаем Flask сервер для Render
+# Создаем Flask сервер
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "✅ Бот работает и поддерживается Flask!"
 
+@app.route(f"/{TOKEN}", methods=["POST"])
+async def webhook():
+    update = Update(**request.get_json())
+    await dp.feed_update(bot, update)
+    return "OK", 200
+
+# Запуск Flask в фоне
 def run_flask():
     app.run(host="0.0.0.0", port=5000, debug=False, use_reloader=False)
 
-# Функция для остановки всех старых процессов бота перед запуском нового
+# Завершаем старые сессии бота
 def kill_old_sessions():
     try:
         print("🛑 Завершаем старые сессии бота...")
-        subprocess.run(["pkill", "-f", "bot.py"])  # Убивает все запущенные копии
+        subprocess.run(["pkill", "-f", "bot.py"])  # Убиваем старые процессы
         print("✅ Старые сессии остановлены!")
     except Exception as e:
         print(f"⚠ Ошибка при завершении старых сессий: {e}")
 
 # Создаем бота и диспетчер
-bot = Bot(token=TOKEN)
+bot = Bot(token=TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
 # Храним список подключенных ПК
@@ -50,15 +59,15 @@ connected_pcs = {}
 # Флаг работы бота
 running = True
 
-# Функция для завершения бота корректно
+# Корректное завершение бота
 async def shutdown():
     global running
     running = False
     print("🛑 Остановка бота...")
-    await bot.session.close()  # Закрываем сессию бота
+    await bot.session.close()
     sys.exit(0)
 
-# Обработчик завершения процесса (CTRL+C, kill)
+# Обработчик сигналов завершения
 def stop_handler(signum, frame):
     asyncio.create_task(shutdown())
 
@@ -67,12 +76,12 @@ signal.signal(signal.SIGINT, stop_handler)
 
 # Команда /start
 @dp.message(Command("start"))
-async def start(message: Message):
+async def start(message):
     await message.reply("Привет! Используйте /connect, чтобы подключиться.")
 
-# Команда /connect — подключение ПК
+# Команда /connect
 @dp.message(Command("connect"))
-async def connect_pc(message: Message):
+async def connect_pc(message):
     pc_id = str(message.from_user.id)
 
     if pc_id in connected_pcs:
@@ -83,9 +92,9 @@ async def connect_pc(message: Message):
     connected_pcs[pc_id] = pc_name
     await message.reply(f"ПК {pc_name} ({pc_id}) успешно подключен!")
 
-# Команда /list — список ПК
+# Команда /list
 @dp.message(Command("list"))
-async def list_pcs(message: Message):
+async def list_pcs(message):
     if message.from_user.id != ADMIN_ID:
         return await message.reply("Нет доступа.")
 
@@ -99,12 +108,17 @@ async def list_pcs(message: Message):
 async def main():
     print("✅ Бот работает!")
 
-    await bot.delete_webhook(drop_pending_updates=True)  # Удаляем старые обновления
-    await dp.start_polling(bot)
+    # Удаляем старые вебхуки, если они есть
+    await bot(DeleteWebhook(drop_pending_updates=True))
 
+    # Устанавливаем новый вебхук
+    webhook_url = f"https://your-app-name.onrender.com/{TOKEN}"
+    await bot.set_webhook(webhook_url)
+
+    # Запускаем Flask в отдельном потоке
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
 
 if __name__ == "__main__":
-    kill_old_sessions()  # Завершаем старые сессии перед запуском новой
-    flask_thread = Thread(target=run_flask)
-    flask_thread.start()
+    kill_old_sessions()  # Убиваем старые процессы
     asyncio.run(main())
