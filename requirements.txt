@@ -1,3 +1,0 @@
-aiogram==3.2.0
-aiohttp
-apscheduler
